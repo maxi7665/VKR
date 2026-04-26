@@ -1,0 +1,65 @@
+skinparam defaultFontSize 10
+skinparam ParticipantPadding 10
+skinparam BoxPadding 10
+skinparam PackagePadding 10
+skinparam Nodesep 5
+skinparam Ranksep 5
+
+@startuml
+!include <C4/C4_Container>
+
+'title Диаграмма компонентов системы позиционного \nотслеживания транспортных средств
+
+' Внешние сущности
+Person(user, "Диспетчер", "Пользователь системы")
+System_Ext(devices, "Бортовые устройства", "Трекеры с поддержкой EGTS")
+System_Ext(gov_systems, "Внешние системы")
+
+' Граница разрабатываемой системы
+'System_Boundary(tracking_system, "Система позиционного отслеживания") {
+    
+    ' Основные контейнеры
+    Container(ingress, "Receiver", "Kotlin + Spring", "Приём телеметрии")
+    Container(kafka, "Apache Kafka", "Брокер сообщений")
+    
+    ' Обрабатывающие сервисы
+    Container(processor, "Telemetry Processor", "Kotlin + Spring", "Сохранение в БД, формирование событий")
+    Container(zone_tracker, "Zone Tracker", "Kotlin + Spring", "Зональное отслеживание")
+    Container(search, "Spatio-Temporal Search", "Kotlin + Spring", "Выполнение пространственно-временных запросов")
+    Container(retrans, "Retransmission Service", "Kotlin + Spring", "Ретрансляция данных во внешние системы")
+    
+    ' API и интерфейс пользователя
+    Container(api, "API Gateway", "Kotlin + Spring")
+    Container(web, "Web UI", "Vue.js / TypeScript", "Веб-клиент")
+    
+    ' Хранилища данных
+    ContainerDb(postgres, "PostgreSQL", "Реляционная СУБД", "Долговременное хранение телеметрии,\nгеозон и конфигураций.")
+    ContainerDb(redis, "Redis", "Кэш")
+'}
+
+' Связи
+Rel(devices, ingress, "Отправка телеметрии", "EGTS")
+Rel(ingress, kafka, "Публикация в топик", "Kafka protocol")
+Rel(kafka, processor, "Данные телеметрии", "Kafka")
+Rel(kafka, zone_tracker, "Получение координат для контроля", "Kafka")
+Rel(kafka, retrans, "Получение пакетов для отправки", "Kafka")
+
+Rel(processor, postgres, "Сохранение обработанных записей", "JDBC")
+Rel(zone_tracker, postgres, "Загрузка конфигураций зон", "JDBC")
+Rel(search, postgres, "Выполнение аналитических запросов", "JDBC")
+
+Rel(retrans, gov_systems, "Ретрансляция", "EGTS,HTTP,etc.")
+
+Rel(user, web, "Взаимодействие с интерфейсом", "HTTPS")
+Rel(web, api, "Запросы к серверу", "REST / WebSocket")
+Rel(api, search, "Запросы поиска треков и позиций", "HTTP")
+Rel(api, zone_tracker, "Подписка на события зон", "WebSocket / HTTP")
+Rel(api, processor, "Получение текущей телеметрии", "WebSocket")
+Rel_L(api, redis, "Кеш запросов", "HTTP")
+
+' Примечания, подчёркивающие ключевые особенности
+'Note(top_of, kafka, "Кластер из нескольких брокеров\nРепликация партиций для отказоустойчивости")
+'Note(right_of, zone_tracker, "Горизонтально масштабируемый\nДо 50 000 зон на экземпляр\nПространственный индекс S2 в ОЗУ")
+'Note(bottom_of, retrans, "Гарантированная доставка:\nповторные попытки, DLQ")
+
+@enduml

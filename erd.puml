@@ -1,0 +1,161 @@
+'skinparam defaultFontSize 10
+'skinparam ParticipantPadding 20
+'skinparam BoxPadding 50
+'skinparam PackagePadding 50
+'skinparam Nodesep 10
+'skinparam Ranksep 30
+
+@startuml
+hide circle
+skinparam linetype ortho
+
+' ========== Основные справочники ==========
+
+entity "vehicles" as vehicles {
+  * id : bigint <<PK>>
+  --
+  name : varchar(100)
+  registration_number : varchar(20)
+  device_id : varchar(50) <<unique>>
+  type_id : int
+  department_id : int <<FK>>
+  created_at : timestamp
+}
+
+'note right of vehicles
+ ' Индексы:
+ ' - device_id (уникальный)
+'end note
+
+entity "geozones" as geozones {
+  * id : bigint <<PK>>
+  --
+  name : varchar(100)
+  type : varchar(10)   
+  coordinates : jsonb   
+  is_active : boolean
+}
+
+' ========== Телеметрические данные ==========
+
+entity "telemetry_packets" as packets {
+  * id : bigint <<PK>>
+  --
+  vehicle_id : bigint <<FK>>
+  packet_time : timestamp           
+  reception_time : timestamp        
+  latitude : double precision
+  longitude : double precision
+  s2_cell : varchar(20)             
+}
+
+'note right of packets
+ ' Индексы:
+ ' - (vehicle_id, reception_time)
+ ' - пространственный по s2_cell
+ ' Пространственный поиск выполняется
+ ' именно в этой таблице.
+'end note
+
+entity "telemetry_subrecords" as subrecords {
+  * id : bigint <<PK>>
+  --
+  packet_id : bigint <<FK>>
+  record_type : smallint  
+  altitude : real
+  speed : real
+  course : real
+  odometer : real
+  sensors_data : jsonb      
+  timestamp : timestamp     
+}
+
+'note right of subrecords
+ ' Индекс:
+ ' - (packet_id) для быстрой связи с пакетом
+'end note
+
+' ========== События ==========
+
+entity "telemetry_events" as t_events {
+  * id : bigint <<PK>>
+  --
+  vehicle_id : bigint <<FK>>
+  event_type : varchar(50)  
+  event_time : timestamp
+  value : real              
+  threshold : real          
+  subrecord_id : bigint <<FK>> 
+  config_id : int <<FK>>
+}
+
+entity "geozone_events" as g_events {
+  * id : bigint <<PK>>
+  --
+  vehicle_id : bigint <<FK>>
+  geozone_id : bigint <<FK>>
+  event_type : varchar(20)  
+  event_time : timestamp
+}
+
+' ========== Настройки событий ==========
+
+entity "telemetry_event_config" as te_config {
+  * id : int <<PK>>
+  --
+  event_type : varchar(50)
+  parameters : jsonb        
+  is_enabled : boolean
+  description : text
+}
+
+entity "geozone_event_config" as gz_config {
+  * id : int <<PK>>
+  --
+  geozone_id : bigint <<FK>>
+  event_type : varchar(20)  
+  is_enabled : boolean
+}
+
+'note right of gz_config
+ ' Дополнительные параметры обработки
+'  (правила) могут добавляться в будущем
+'  через поле parameters при необходимости.
+'end note
+
+' ========== Общие настройки ==========
+
+entity "general_settings" as settings {
+  * key : varchar(50) <<PK>>
+  --
+  value : text
+  description : text
+}
+
+'note right of settings
+ ' Примеры ключей:
+ ' geohash_level_db
+ ' geohash_level_realtime
+ ' max_geozones_per_instance
+'end note
+
+' =================================
+' Связи
+' =================================
+
+vehicles ||--o{ packets : "передаёт данные"
+packets ||--o{ subrecords : "содержит подзаписи"
+
+vehicles ||--o{ t_events : "генерирует"
+vehicles ||--o{ g_events : "участвует в"
+
+geozones ||--o{ g_events : "зона события"
+geozones ||--o{ gz_config : "настройка событий"
+
+subrecords ||--o| t_events : "источник"
+subrecords ||--o| g_events : "фиксация координат"
+
+te_config ||--o{ t_events : "определяет порог"
+gz_config ||--o{ g_events : "правила для зоны"
+
+@enduml
