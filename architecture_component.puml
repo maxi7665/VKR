@@ -55,7 +55,9 @@ Rel(web, api, "Запросы к серверу", "REST / WebSocket")
 Rel(api, search, "Запросы поиска треков и позиций", "HTTP")
 Rel(api, zone_tracker, "Подписка на события зон", "WebSocket / HTTP")
 Rel(api, processor, "Получение текущей телеметрии", "WebSocket")
-Rel_L(api, redis, "Кеш запросов", "HTTP")
+Rel_R(api, redis, "Кеш запросов", "HTTP")
+Rel_U(processor, redis, "Актуальная телеметрия")
+Rel_U(zone_tracker, redis, "Текущие зоны")
 
 ' Примечания, подчёркивающие ключевые особенности
 'Note(top_of, kafka, "Кластер из нескольких брокеров\nРепликация партиций для отказоустойчивости")

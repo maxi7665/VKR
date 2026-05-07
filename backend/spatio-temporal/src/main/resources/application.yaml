@@ -1,0 +1,33 @@
+server:
+  port: 38090
+  address: 0.0.0.0
+
+spring:
+  application:
+    name: spatio-temporal
+  datasource:
+    url: jdbc:postgresql://localhost:5432/lynceus
+    username: user
+    password: password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  info:
+    title: Spatio-Temporal API
+    description: API documentation for the spatio-temporal project
+    version: 1.0.0
+    contact:
+      name: API Support
+      email: support@example.com
