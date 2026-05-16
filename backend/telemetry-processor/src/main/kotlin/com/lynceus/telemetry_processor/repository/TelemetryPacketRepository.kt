@@ -35,6 +35,12 @@ interface TelemetryPacketRepositoryCustom {
         fromDateTime: LocalDateTime,
         toDateTime: LocalDateTime
     ): List<TelemetryPacket>
+
+    fun getTelemetryInPeriodWithLimit(
+        fromDateTime: LocalDateTime,
+        toDateTime: LocalDateTime,
+        limit: Long
+    ): List<TelemetryPacket>
 }
 
 class TelemetryPacketRepositoryImpl : TelemetryPacketRepositoryCustom {
@@ -111,6 +117,29 @@ class TelemetryPacketRepositoryImpl : TelemetryPacketRepositoryCustom {
         query.setParameter("device_id", deviceId)
         query.setParameter("from_time", fromDateTime)
         query.setParameter("to_time", toDateTime)
+
+        @Suppress("UNCHECKED_CAST")
+        return query.resultList as List<TelemetryPacket>
+    }
+
+    override fun getTelemetryInPeriodWithLimit(
+        fromDateTime: LocalDateTime,
+        toDateTime: LocalDateTime,
+        limit: Long): List<TelemetryPacket> {
+
+        val sql = """
+            SELECT * from telemetry_packets p 
+                where packet_time >= :from_time
+                and packet_time <= :to_time
+            LIMIT :limit
+        """.trimIndent()
+
+        val query = entityManager.createNativeQuery(
+            sql, TelemetryPacket::class.java)
+
+        query.setParameter("from_time", fromDateTime)
+        query.setParameter("to_time", toDateTime)
+        query.setParameter("limit", limit)
 
         @Suppress("UNCHECKED_CAST")
         return query.resultList as List<TelemetryPacket>

@@ -1,24 +1,31 @@
 package com.lynceus.telemetry_processor.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.google.common.geometry.*
 import com.lynceus.telemetry_processor.entity.TelemetryPacket
+import com.lynceus.telemetry_processor.processor.S2ZoneIndex
+import com.lynceus.telemetry_processor.repository.TelemetryPacketRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
+import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.core.SetOperations
 import org.springframework.data.redis.core.ValueOperations
 import java.time.Duration
 import java.time.LocalDateTime
+import kotlin.time.measureTime
 
 @ExtendWith(MockitoExtension::class)
-class S2RegionTelemetryProcessorTest {
+@SpringBootTest
+class S2RegionTelemetryProcessorTest(
+    val applicationContext: org.springframework.context.ApplicationContext
+) {
 
     @Mock
     private lateinit var redisTemplate: RedisTemplate<String, Any>
@@ -34,11 +41,17 @@ class S2RegionTelemetryProcessorTest {
 
     private lateinit var processor: S2RegionTelemetryProcessor
 
+    private var geozoneService: GeozoneService = applicationContext.getBean(
+        GeozoneService::class.java)
+
+    private var telemetryPacketRepository = applicationContext.getBean(
+        TelemetryPacketRepository::class.java)
+
     @BeforeEach
     fun setUp() {
         processor = S2RegionTelemetryProcessor(redisTemplate, objectMapper)
-        `when`(redisTemplate.opsForSet()).thenReturn(setOps)
-        `when`(redisTemplate.opsForValue()).thenReturn(valueOps)
+//        `when`(redisTemplate.opsForSet()).thenReturn(setOps)
+//        `when`(redisTemplate.opsForValue()).thenReturn(valueOps)
     }
 
     @Test
@@ -186,5 +199,120 @@ class S2RegionTelemetryProcessorTest {
         val field = obj.javaClass.getDeclaredField(fieldName)
         field.isAccessible = true
         return field.get(obj) as T
+    }
+
+    @Test
+    fun getCellChildren(){
+        val cell = 5086308267525668864;
+        val cellId = S2CellId(cell)
+
+
+        println(cellId.level())
+        println(cellId.childBegin(15).id())
+        println(cellId.childEnd(15).id())
+    }
+
+    /**
+     * Сравнение встроенного S2-индекса и самописного
+     */
+    @Test
+    fun indexesComparison() {
+        val zones = geozoneService.getAllGeozones()
+
+        val regions = zones.map {
+            val s2Loop = S2Loop(
+                it.coordinates.map { S2LatLng.fromDegrees(
+                    it[0],
+                    it[1]).toPoint() }
+            )
+            s2Loop.normalize()
+            S2Polygon(s2Loop)
+        }
+
+        val indexMaxLevel = 24;
+
+        val zoneCoverer = S2RegionCoverer.builder()
+            .setMaxCells(200)
+            .setMinLevel(1)
+            .setMaxLevel(indexMaxLevel)
+            .build()
+
+
+        val zoneIndex = S2ZoneIndex(
+            regions,
+            zoneCoverer,
+            indexMaxLevel)
+
+        val shapeIndex = S2ShapeIndex()
+
+        val shapeToRegion = regions.groupBy { it.shape() }
+
+        shapeToRegion.forEach { shapeIndex.add(it.key) }
+
+        val containsPointQuery = S2ContainsPointQuery(shapeIndex)
+
+//        val telemetry = telemetryPacketRepository.getTelemetryInPeriodWithLimit(
+//            LocalDateTime.of(2026,4,1,0,0),
+//            LocalDateTime.of(2026,6,1,0,0),
+//            50000
+//        ).toMutableList()
+//
+//        assert(telemetry.isNotEmpty())
+//
+//        // наращиваем телеметрию до нужных значений
+//        while (telemetry.size <= 100000) {
+//            telemetry += telemetry
+//        }
+//
+//        val points = telemetry.map {
+//            val point = S2LatLng.fromDegrees(
+//                it.latitude,
+//                it.longitude).toPoint()
+//
+//            Pair(point, S2Cell(point).id().parent(indexMaxLevel))
+//         }
+
+        val points = zones.map{ S2LatLng.fromDegrees(
+            it.lat,
+            it.lon).toPoint() }
+
+//        for (point in points) {
+//
+//
+//
+//            val shapeZones = containsPointQuery.getContainingShapeIds(
+//                point)
+//            val zoneZones = zoneIndex.findRegions(
+//                point
+//                )
+//
+////            assert(zoneZones.size() > 0)
+//
+//            if (!shapeZones.isEqualTo(zoneZones)){
+//                println("here")
+//            }
+//
+//            assert(shapeZones.isEqualTo(zoneZones))
+//
+//
+//        }
+
+        val queryTime = measureTime {
+            for (point in points) {
+                val shapeZones = containsPointQuery
+                    .getContainingShapeIds(point)
+            }
+        }
+
+        val indexTime = measureTime {
+            for (point in points) {
+                val zoneZones = zoneIndex.findRegions(
+                    point
+                )
+            }
+        }
+
+        println(queryTime)
+        println(indexTime)
     }
 }

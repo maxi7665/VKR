@@ -23,6 +23,8 @@ export interface ZoneSummary {
 }
 
 export interface S2Cell {
+  s2CellId: string
+  level: number
   polygon: Coordinate[]
   [key: string]: unknown
 }
@@ -80,9 +82,17 @@ export async function createZone(payload: ZoneCreatePayload): Promise<{ id: numb
 }
 
 export async function getS2Cells(coordinates: Coordinate[], maxLevel: number): Promise<S2Cell[]> {
-  return request<S2Cell[]>('/polygon/s2', {
+  const response = await fetch(`${API_BASE}/polygon/s2`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ coordinates, maxLevel })
   })
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText)
+    throw new Error(errorText || `HTTP ${response.status}`)
+  }
+  const text = await response.text()
+  // Convert s2CellId numbers to strings to preserve full int64 precision
+  const transformed = text.replace(/"s2CellId"\s*:\s*(\d+)/g, '"s2CellId":"$1"')
+  return JSON.parse(transformed) as S2Cell[]
 }

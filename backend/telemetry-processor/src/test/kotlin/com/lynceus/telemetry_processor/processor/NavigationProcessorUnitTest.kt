@@ -27,6 +27,8 @@ class NavigationProcessorUnitTest {
 
     private lateinit var s2RegionTelemetryProcessor: S2RegionTelemetryProcessor
 
+    private lateinit var zoneVisitEventProcessor: ZoneVisitEventProcessor
+
     @Captor
     private lateinit var packetCaptor: ArgumentCaptor<Iterable<TelemetryPacket>>
 
@@ -101,7 +103,8 @@ class NavigationProcessorUnitTest {
         navigationProcessor = NavigationProcessor(
             telemetryPacketRepository = telemetryPacketRepository,
             objectMapper = ObjectMapper(),
-            redisTelemetryStorage = s2RegionTelemetryProcessor
+            redisTelemetryStorage = s2RegionTelemetryProcessor,
+            zoneVisitEventProcessor = zoneVisitEventProcessor
         )
     }
 

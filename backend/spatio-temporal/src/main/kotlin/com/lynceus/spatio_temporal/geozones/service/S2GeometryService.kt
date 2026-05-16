@@ -101,20 +101,20 @@ class S2GeometryService {
 //                    lonEast = recBound.lngHi().degrees()
 //                )
 
-                val box = buildBoundingBoxFromVertices(s2cell)
-
-                val boundingBox = BoundingBox(
-                    latNorth = box.latHi().degrees(),
-                    lonWest = box.lngLo().degrees(),
-                    latSouth = box.latLo().degrees(),
-                    lonEast = box.lngHi().degrees()
-                )
+//                val box = buildBoundingBoxFromVertices(s2cell)
+//
+//                val boundingBox = BoundingBox(
+//                    latNorth = box.latHi().degrees(),
+//                    lonWest = box.lngLo().degrees(),
+//                    latSouth = box.latLo().degrees(),
+//                    lonEast = box.lngHi().degrees()
+//                )
 
                 val polygon = cellToPolygon(cell)
                 
                 val result = S2ConversionResult(
-                    s2CellId = cell.id(),
-                    level = cell.level(), // Используем реальный уровень ячейки
+                    s2CellId = s2cell.id().id(),
+                    level = s2cell.level().toInt(), // Используем реальный уровень ячейки
                     polygon = polygon,
                 )
                 
