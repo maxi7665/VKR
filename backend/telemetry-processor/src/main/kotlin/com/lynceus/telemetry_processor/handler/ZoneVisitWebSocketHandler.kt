@@ -40,22 +40,26 @@ class ZoneVisitWebSocketHandler(
     }
 
     private fun broadcastEvent(event: ZoneVisitEvent) {
-        val json = objectMapper.writeValueAsString(event)
-        val message = TextMessage(json)
+        try {
+            val json = objectMapper.writeValueAsString(event)
+            val message = TextMessage(json)
 
-        val iterator = sessions.iterator()
-        while (iterator.hasNext()) {
-            val session = iterator.next()
-            try {
-                if (session.isOpen) {
-                    session.sendMessage(message)
-                } else {
+            val iterator = sessions.iterator()
+            while (iterator.hasNext()) {
+                val session = iterator.next()
+                try {
+                    if (session.isOpen) {
+                        session.sendMessage(message)
+                    } else {
+                        iterator.remove()
+                    }
+                } catch (e: Exception) {
+                    logger.error("Failed to send ZoneVisitEvent to session ${session.id}", e)
                     iterator.remove()
                 }
-            } catch (e: Exception) {
-                logger.error("Failed to send ZoneVisitEvent to session ${session.id}", e)
-                iterator.remove()
             }
+        } catch (e: Exception) {
+            logger.error("Failed to serialize ZoneVisitEvent: $event", e)
         }
     }
 }

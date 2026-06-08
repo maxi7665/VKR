@@ -67,7 +67,16 @@ class TelemetryWebSocketHandler(
             logger.debug("Received message from ${session.id}: $payload")
             
             val request = objectMapper.readTree(payload)
-            val type = request["type"].asText()
+            val typeNode = request["type"]
+            if (typeNode == null || typeNode.isNull) {
+                session.sendMessage(TextMessage("""{"error": "Missing 'type' field"}"""))
+                return
+            }
+            val type = typeNode.asText()
+            if (type == null || type.isBlank()) {
+                session.sendMessage(TextMessage("""{"error": "Missing 'type' field"}"""))
+                return
+            }
             
             when (type) {
                 "subscribe_polygon" -> handleSubscribePolygon(session, request)
@@ -81,8 +90,16 @@ class TelemetryWebSocketHandler(
 
     private fun handleSubscribePolygon(session: WebSocketSession, request: com.fasterxml.jackson.databind.JsonNode) {
         val pointsNode = request["points"]
-        if (!pointsNode.isArray || pointsNode.size() < 3) {
-            session.sendMessage(TextMessage("""{"error": "Invalid polygon: at least 3 points required"}"""))
+        if (pointsNode == null || pointsNode.isNull) {
+            session.sendMessage(TextMessage("""{"error": "Missing 'points' field"}"""))
+            return
+        }
+        if (!pointsNode.isArray) {
+            session.sendMessage(TextMessage("""{"error": "Points must be an array"}"""))
+            return
+        }
+        if (pointsNode.size() < 3) {
+            session.sendMessage(TextMessage("""{"error": "Polygon must have at least 3 points"}"""))
             return
         }
         
@@ -121,29 +138,37 @@ class TelemetryWebSocketHandler(
         // ищем все ключи навигации
         val cursor = redisTemplate.scan(options)
         val keys = mutableListOf<String>()
-
-        while (cursor.hasNext()) {
-            val key = cursor.next()
-            keys.add(key)
+        
+        if (cursor != null) {
+            while (cursor.hasNext()) {
+                val key = cursor.next()
+                keys.add(key)
+            }
         }
         
         // берем всю навигацию
-        val data = redisTemplate.opsForValue().multiGet(keys)
+        val data = if (keys.isNotEmpty()) redisTemplate.opsForValue().multiGet(keys) else null
 
         // если навигация входит в точку, отдаем клиенту (должно быть быстро)
         if (data != null) {
             for (value in data) {
-                val str = value.toString()
-                val obj = objectMapper.readValue(str, TelemetryPacket::class.java)
-                val s2Point = S2LatLng.fromDegrees(obj.latitude, obj.longitude).toPoint()
-                //session.sendMessage(TextMessage(str))
-                if (query.contains(s2Point)) {
-                    session.sendMessage(TextMessage(str))
+                if (value != null) {
+                    val str = value.toString()
+                    try {
+                        val obj = objectMapper.readValue(str, TelemetryPacket::class.java)
+                        val s2Point = S2LatLng.fromDegrees(obj.latitude, obj.longitude).toPoint()
+                        //session.sendMessage(TextMessage(str))
+                        if (query.contains(s2Point)) {
+                            session.sendMessage(TextMessage(str))
+                        }
+                    } catch (e: Exception) {
+                        logger.error("Failed to parse telemetry data: $str", e)
+                    }
                 }
             }
         }
         
-        //session.sendMessage(TextMessage("""{"type": "subscription_ack", "deviceCount": ${keys.size}}"""))
+        session.sendMessage(TextMessage("""{"status": "subscribed"}"""))
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -207,9 +232,8 @@ class TelemetryWebSocketHandler(
     
     fun extractDeviceIdFromKey(key: String): Long? {
         // key format: "nav:{deviceId}:last"
-        return key.removePrefix(NAV_KEY_PREFIX)
-            .removeSuffix(NAV_KEY_SUFFIX)
-            .toLongOrNull()
+        val regex = "^nav:(\\d+):last$".toRegex()
+        return regex.find(key)?.groupValues?.get(1)?.toLongOrNull()
     }
 
     override fun afterConnectionClosed(session: WebSocketSession, status: CloseStatus) {

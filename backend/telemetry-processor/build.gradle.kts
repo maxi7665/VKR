@@ -4,6 +4,7 @@ plugins {
 	war
 	id("org.springframework.boot") version "3.2.5"
 	id("io.spring.dependency-management") version "1.1.7"
+	id("org.jetbrains.kotlinx.kover") version "0.9.8"
 }
 
 group = "com.lynceus"
@@ -33,6 +34,7 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.springframework.kafka:spring-kafka-test")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+	testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	implementation("com.google.geometry:s2-geometry-library:HEAD-SNAPSHOT")
 	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0")
@@ -52,3 +54,16 @@ tasks.withType<Test> {
 	useJUnitPlatform()
 	maxHeapSize = "4096m"
 }
+
+//jacoco {
+//	toolVersion = "0.8.11"
+//}
+//
+//tasks.jacocoTestReport {
+//	dependsOn(tasks.test)
+//	reports {
+//		xml.required.set(true)
+//		html.required.set(true)
+//		csv.required.set(false)
+//	}
+//}

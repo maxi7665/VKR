@@ -7,53 +7,68 @@ import com.lynceus.telemetry_processor.event.InOut
 import com.lynceus.telemetry_processor.event.ZoneVisitEvent
 import com.lynceus.telemetry_processor.service.GeozoneService
 import org.springframework.context.ApplicationEventPublisher
-import org.springframework.data.redis.core.RedisTemplate
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Component
 
 @Component
 class ZoneVisitEventProcessor(
     private val geozoneService: GeozoneService,
-    private val kafkaTemplate: KafkaTemplate<String, String>,
-    private val redisTemplate: RedisTemplate<String, String>,
     private val applicationEventPublisher: ApplicationEventPublisher
 ) {
-    private val query: S2ContainsPointQuery
     private val zoneIdToZones: Map<Long, GeozoneDto>
-    private val shapeToZonesList: Map<S2Shape, List<GeozoneDto>>
     private val deviceToCurrentZoneIdSet = hashMapOf<Long, HashSet<Long>>()
+    private val zoneIndex: S2ZoneIndex
+    private val zones: List<GeozoneDto>
 
     init {
         // все зоны грузим в пространственный индекс
-        val zones = geozoneService.getAllGeozones()
+        zones = geozoneService.getAllGeozones()
         val shapeToZones = hashMapOf<S2Shape, MutableList<GeozoneDto>>()
 
         zoneIdToZones = zones.associateBy { it.id }
 
-        val index = S2ShapeIndex()
+        var validCount = 0
+        var totalCount = 0
+        val regions = mutableListOf<S2Region>()
 
         for (zone in zones) {
+            totalCount++
             val points = zone.coordinates.map{ S2LatLng.fromDegrees(
                 it[0],
                 it[1]
             ).toPoint() }
 
-            val polygon = S2Polygon(S2Loop(points).normalize())
+            val loop = S2Loop(points)
+            loop.normalize()
+            
+            // Check loop validity
+            if (!loop.isValid) {
+                println("DEBUG: Loop is invalid for zone ${zone.id}")
+                continue
+            }
+            
+            val polygon = S2Polygon(loop)
 
             if (polygon.isValid) {
-                val shape = polygon.shape()
-
-                index.add(shape)
-
-                shapeToZones.computeIfAbsent(shape) { mutableListOf() }
-                    .add(zone)
+                validCount++
+                regions.add(polygon)
+            } else {
+                // Polygon is invalid, skip it
+                println("DEBUG: Polygon is invalid for zone ${zone.id}, loop valid=${loop.isValid}")
             }
         }
 
-        val q = S2ContainsPointQuery(index)
+        // Debug output
+        println("ZoneVisitEventProcessor init: $validCount/$totalCount polygons valid")
 
-        query = q
-        shapeToZonesList = shapeToZones
+        zoneIndex = S2ZoneIndex(
+            regions = regions,
+            coverer = S2RegionCoverer.builder()
+                .setMaxLevel(24)
+                .setMinLevel(1)
+                .setMaxCells(200)
+                .build(),
+            targetLevel = 24
+        )
     }
 
     fun processPacket(packet: TelemetryPacket) {
@@ -61,15 +76,16 @@ class ZoneVisitEventProcessor(
         val point = S2LatLng.fromDegrees(
             packet.latitude,
             packet.longitude).toPoint()
-        val shapes = query.getContainingShapes(point)
+        val regions = zoneIndex.findRegions(point)
         val oldZoneIds = deviceToCurrentZoneIdSet.computeIfAbsent(
             packet.deviceId){
             hashSetOf()
         }
         var newZoneIds: HashSet<Long>? = null
+        val zones = regions.map { zones[it] }
 
-        for (shape in shapes) {
-            val zones = shapeToZonesList[shape]
+        for (region in zones) {
+
             if (zones != null) {
                 newZoneIds = newZoneIds ?: hashSetOf()
                 for (zone in zones) {
@@ -83,6 +99,7 @@ class ZoneVisitEventProcessor(
         val addedZoneIds = newZones.subtract(oldZoneIds)
         val removedZoneIds = oldZoneIds.subtract(newZones)
 
+        // вход в зону
         for (addedZoneId in addedZoneIds) {
             val zone = zoneIdToZones[addedZoneId]
 
@@ -91,6 +108,7 @@ class ZoneVisitEventProcessor(
             }
         }
 
+        // выход из зоны
         for (removedZoneId in removedZoneIds) {
             val zone = zoneIdToZones[removedZoneId]
 
@@ -99,9 +117,6 @@ class ZoneVisitEventProcessor(
             }
         }
 
-
-
-        // TODO сюда выгрузка в redis
         if (newZoneIds != null) {
             deviceToCurrentZoneIdSet[packet.deviceId] = newZoneIds
         }

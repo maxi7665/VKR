@@ -1,200 +1,164 @@
 package com.lynceus.telemetry_processor.processor
 
-import com.google.common.geometry.S2Cell
 import com.google.common.geometry.S2CellId
-import com.google.common.geometry.S2CellUnion
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Region
 import com.google.common.geometry.S2RegionCoverer
 import com.google.common.geometry.primitives.IntVector
 
-/**
- * Индекс для быстрого поиска S2‑регионов, содержащих данную ячейку targetLevel.
- *
- * @param regions список регионов для индексации.
- * @param coverer экземпляр S2RegionCoverer, используемый для получения покрытий.
- *                Важно: внутри класса для всех покрытий принудительно устанавливается maxLevel = targetLevel.
- * @param targetLevel уровень, до которого нормализуются все покрытия (самый мелкий уровень).
- */
 class S2ZoneIndex(
     val regions: List<S2Region>,
     coverer: S2RegionCoverer,
     private val targetLevel: Int
 ) {
-    // Непересекающийся интервал на кривой Гильберта
-    private data class Interval(
-        val start: Long,      // inclusive
-        val end: Long,        // exclusive
-        val regionIndices: IntVector)
+    private val intervalStarts: LongArray
+    private val intervalEnds: LongArray
+    private val regionIndicesPerInterval: Array<IntArray>
 
-    // Отсортированный список непересекающихся интервалов
-    private val intervals: List<Interval>
+    // Вспомогательный класс для событий заметания
+    private class SweepEvent(
+        val point: Long,
+        val regionIdx: Int,
+        val isStart: Boolean
+    )
 
     init {
-        // Создаём локальный копирующий экземпляр coverer с гарантированным maxLevel
         val localCoverer = S2RegionCoverer.builder()
             .setMaxCells(coverer.maxCells())
             .setMinLevel(coverer.minLevel())
-            .setMaxLevel(targetLevel)          // <-- ключевой момент
+            .setMaxLevel(targetLevel)
             .setLevelMod(coverer.levelMod())
             .build()
 
-        // Сырые интервалы (начало, конец, индекс региона)
-        data class RawInterval(val start: Long, val end: Long, val regionIndex: Int)
+        // Сырые сегменты одного региона (для локального сжатия)
+        class RawSegment(val start: Long, var end: Long, val regionIdx: Int)
+        val initialSegments = mutableListOf<RawSegment>()
 
-        val rawIntervals = mutableListOf<RawInterval>()
-
-        val prevInterval = LongArray(2)
-
-        // Шаг 1: для каждого региона получаем покрытие и "нарезаем" все ячейки до targetLevel
-        for ((index, region) in regions.withIndex()) {
-            val covering: S2CellUnion = localCoverer.getCovering(region)
-
-            val list = mutableListOf<Pair<Long, Long>>()
+        // ШАГ 1: Получение покрытий и локальное слияние смежных ячеек для каждого региона отдельно
+        for ((idx, region) in regions.withIndex()) {
+            val covering = localCoverer.getCovering(region)
+            var prevSeg: RawSegment? = null
 
             for (cellId in covering.cellIds()) {
-                // localCoverer.maxLevel = targetLevel, поэтому cellId.level() <= targetLevel
                 val start = cellId.childBegin(targetLevel).id()
-                val end   = cellId.childEnd(targetLevel).id()   // exclusive
-                list.add(Pair(start, end))
+                val end = cellId.childEnd(targetLevel).id()
+
+                if (prevSeg != null && prevSeg.end == start) {
+                    prevSeg.end = end // Сливаем смежные участки
+                } else {
+                    val newSeg = RawSegment(start, end, idx)
+                    initialSegments.add(newSeg)
+                    prevSeg = newSeg
+                }
+            }
+        }
+
+        // ШАГ 2: Создание списка событий для Sweep-line
+        val events = ArrayList<SweepEvent>(initialSegments.size * 2)
+        for (seg in initialSegments) {
+            events.add(SweepEvent(seg.start, seg.regionIdx, true))
+            events.add(SweepEvent(seg.end, seg.regionIdx, false))
+        }
+        // Сортировка: O(M log M)
+        events.sortWith(
+            compareBy<SweepEvent> { it.point }
+                .thenByDescending { it.isStart }
+        )
+
+        val groupedEvents = events.groupBy { it.point }
+
+        // Списки для сборки финальных интервалов
+        val startsList = mutableListOf<Long>()
+        val endsList = mutableListOf<Long>()
+        val regionsList = mutableListOf<IntArray>()
+
+        // Эффективный трекинг активных регионов через BitSet
+        val activeRegions = hashSetOf<Int>()
+        var lastPoint = -1L
+        //var activeRegionsNum = 0
+
+        // идем по точкам пространства
+        for ((point, events) in groupedEvents) {
+
+            // добавляем участок, если на нем есть интервалы
+            if (lastPoint != -1L &&
+                activeRegions.isNotEmpty()) {
+                startsList.add(lastPoint)
+                endsList.add(point)
+                regionsList.add(activeRegions.sorted().toIntArray())
             }
 
-            // выполняем слияние интервалов для сокращения их количества
-            val mergedList = mutableListOf<Pair<Long, Long>>()
-
-            var pos = 0
-
-            for ((start, end) in list) {
-                if (pos > 0) {
-                    // расширяем интервал
-                    if (prevInterval[1] >= start) {
-                        prevInterval[1] = end
-                    }
-                    // не расширить - добавляем запомненный интервал
-                    else {
-                        mergedList += Pair(prevInterval[0], prevInterval[1])
-                        prevInterval[0] = start
-                        prevInterval[1] = end
-                    }
+            // помечаем новые активные зоны
+            for (event in events) {
+                if (event.isStart) {
+                    activeRegions += event.regionIdx
                 }
                 else {
-                    prevInterval[0] = start
-                    prevInterval[1] = end
+                    activeRegions -= event.regionIdx
                 }
-                pos ++
             }
 
-            // последний интервал
-            if (pos > 0) {
-                mergedList += Pair(prevInterval[0], prevInterval[1])
-            }
-
-            for ((start, end) in mergedList) {
-                rawIntervals.add(RawInterval(start, end, index))
-            }
+            lastPoint = point
         }
 
-        // Шаг 2: заметание (sweep line) для получения непересекающихся интервалов
-        // События: точка, тип (+1 – начало, -1 – конец), индекс региона
-        val events = mutableListOf<Triple<Long, Int, Int>>()
-        for ((start, end, idx) in rawIntervals) {
-            events.add(Triple(start,  1, idx))
-            events.add(Triple(end,   -1, idx))
-        }
-
-        // Сортируем: по точке, при равенстве сначала концы (-1), потом начала (+1)
-        events.sortWith(compareBy({ it.first }, { it.second }))
-
-        val result = mutableListOf<Interval>()
-        val activeRegions = mutableSetOf<Int>()
-        var lastPoint: Long? = null
-        var i = 0
-
-        while (i < events.size) {
-            val currentPoint = events[i].first
-
-            // Если между lastPoint и currentPoint было активное множество, фиксируем интервал
-            if (lastPoint != null && lastPoint < currentPoint && activeRegions.isNotEmpty()) {
-                result.add(Interval(
-                    lastPoint,
-                    currentPoint,
-                    IntVector.copyOf(
-                        activeRegions.sorted())))
-            }
-
-
-            // Обрабатываем все события в точке currentPoint
-            while (i < events.size && events[i].first == currentPoint) {
-                val (_, type, idx) = events[i]
-                if (type == 1) activeRegions.add(idx)
-                else activeRegions.remove(idx)
-                i++
-            }
-            lastPoint = currentPoint
-        }
-
-        intervals = result   // уже отсортированы по start
+        // Переносим результат в финальные плоские массивы
+        intervalStarts = startsList.toLongArray()
+        intervalEnds = endsList.toLongArray()
+        regionIndicesPerInterval = regionsList.toTypedArray()
     }
 
+    // вектор для хранения результатов при поиске регионов,
+    // чтобы избежать аллокации массива при каждом вызове метода
+    private val resultVector = IntVector()
 
-    /**
-     * Возвращает все регионы, в которые попадает S2‑ячейка на уровне targetLevel.
-     * Если переданная ячейка имеет другой уровень, она сначала приводится к targetLevel
-     * (выбирается родитель нужного уровня).
-     */
-    fun findRegions(p: S2Point): IntVector {
-//        val id = if (cellId.level() == targetLevel) {
-//            cellId.id()
-//        } else {
-//            cellId.parent(targetLevel).id()
-//        }
+    fun findRegions(p: S2Point): IntArray {
+        val id = S2CellId.fromPoint(p)
+            .parent(targetLevel).id()
 
-        val id = S2CellId.fromPoint(p).parent(targetLevel).id()
+        // инициализация окна бинарного поиска
+        var low = 0
+        var high = intervalStarts.size - 1
+        var idx = -1
 
-        val idx = intervals.binarySearch { interval ->
+        // бинарный поиск
+        while (low <= high) {
+            // серединное значение окна поиска = (start + end) / 2
+            val mid = (low + high) ushr 1
+
+            // достаем начало и конец
+            val start = intervalStarts[mid]
+            val end = intervalEnds[mid]
+
             when {
-                id < interval.start -> 1
-                id >= interval.end -> -1
-                else -> 0
-            }
-        }
-
-
-
-        val ret = if (idx >= 0) {
-            val indexes = intervals[idx].regionIndices
-            var isViolation = false
-            for (i in 0..<indexes.size()) {
-                if (!regions[indexes[i]].contains(p)) {
-                    isViolation = true
+                id < start -> high = mid - 1 // id до середины - берем меньшую половину
+                id >= end -> low = mid + 1 // id после середины - берем большую половину
+                else -> {
+                    idx = mid // нашли результат
                     break
                 }
             }
+        }
 
-            // если нет нарушений - возвращаем сразу, иначе - плохой случай,
-            // придется аллоцировать новый и проверять на вхождения
-            if (!isViolation) {
-                indexes
-            }
-            else {
-                val vec = IntVector()
-                for (i in 0..<indexes.size()) {
-                    if (regions[indexes[i]].contains(p)) {
-                        vec.add(indexes[i])
-                    }
-                }
-                vec
+        if (idx == -1) return EMPTY_INT_ARRAY
+
+        val candidates = regionIndicesPerInterval[idx]
+
+        resultVector.clear()
+
+        for (i in candidates.indices) {
+            val rIdx = candidates[i]
+            if (regions[rIdx].contains(p)) {
+                resultVector.add(rIdx)
             }
         }
-        else IntVector.empty()
 
-        return ret
+        return if (resultVector.size() == candidates.size)
+            candidates
+        else
+            resultVector.toArray()
+    }
 
-//        return if (ret.isNotEmpty()) {
-//            val cell = S2Cell(cellId)
-//            ret.filter { it.contains(cell) }
-//        } else {
-//            ret
-//        }
+    companion object {
+        private val EMPTY_INT_ARRAY = IntArray(0)
     }
 }

@@ -23,7 +23,7 @@ class GeozoneService(
     fun getAllGeozones(): List<GeozoneDto> {
         val url = geozoneProperties.service.url
         return try {
-            val geozones = restTemplate.getForObject<Array<GeozoneDto>>(url)
+            val geozones = restTemplate.getForObject<Array<GeozoneDto>?>(url)
             geozones?.toList() ?: emptyList()
         } catch (e: RestClientException) {
             logger.error("Ошибка при получении геозон с URL: $url", e)

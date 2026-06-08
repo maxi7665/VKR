@@ -42,17 +42,16 @@ data class TelemetryPacket(
         if (this === other) return true
         if (other == null) return false
         val oEffectiveClass =
-            if (other is HibernateProxy) other.hibernateLazyInitializer.persistentClass else other.javaClass
+            other.javaClass
         val thisEffectiveClass =
-            if (this is HibernateProxy) this.hibernateLazyInitializer.persistentClass else this.javaClass
+            this.javaClass
         if (thisEffectiveClass != oEffectiveClass) return false
         other as TelemetryPacket
 
         return id != null && id == other.id
     }
 
-    final override fun hashCode(): Int =
-        if (this is HibernateProxy) this.hibernateLazyInitializer.persistentClass.hashCode() else javaClass.hashCode()
+    final override fun hashCode(): Int = javaClass.hashCode()
 
     @Override
     override fun toString(): String {

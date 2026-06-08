@@ -1,7 +1,6 @@
 package com.lynceus.spatio_temporal.geozones.service
 
 import com.google.common.geometry.*
-import com.lynceus.spatio_temporal.geozones.BoundingBox
 import com.lynceus.spatio_temporal.geozones.S2ConversionResult
 import io.swagger.v3.oas.annotations.media.Schema
 import org.springframework.stereotype.Service
@@ -12,11 +11,6 @@ import kotlin.math.min
 
 @Service
 class S2GeometryService {
-    
-    companion object {
-        // Уровень S2, который используется в БД
-        const val S2_LEVEL = 24
-    }
     
     /**
      * Преобразовать полигон (список точек) в список S2 результатов с прямоугольниками
@@ -74,42 +68,6 @@ class S2GeometryService {
                 val nw = S2LatLng(s2cell.getVertex(3))
                 val se = S2LatLng(s2cell.getVertex(1))
 
-//                val lat1 = nw.lat()
-//                val lng1 = nw.lng()
-//                val lat2 = se.lat()
-//                val lng2 = se.lng()
-                
-                // Получаем границы ячейки через childBegin и childEnd
-//                val loCell = cell.childBegin(cell.level())
-//                val hiCell = cell.childEnd(cell.level())
-                
-                // Для bounding box используем примерные координаты центра + размер
-                // Поскольку у нас нет прямого доступа к координатам, вычисляем их через ID
-                // S2 CellID содержит информацию о координатах в своих битах
-                // Это упрощенная реализация для демонстрации
-                
-                // В реальном приложении лучше использовать точные методы S2 API для получения координат
-                // Например: S2LatLng.fromCell(loCell) или аналогичный метод
-//                val centerLon = (loCell.id().toDouble() % 360.0) - 180.0 // Примерная долгота
-//                val centerLat = (hiCell.id().toDouble() % 180.0) - 90.0   // Примерная широта
-
-
-//                val boundingBox = BoundingBox(
-//                    latNorth = recBound.latHi().degrees(),
-//                    lonWest = recBound.lngLo().degrees(),
-//                    latSouth = recBound.latLo().degrees(),
-//                    lonEast = recBound.lngHi().degrees()
-//                )
-
-//                val box = buildBoundingBoxFromVertices(s2cell)
-//
-//                val boundingBox = BoundingBox(
-//                    latNorth = box.latHi().degrees(),
-//                    lonWest = box.lngLo().degrees(),
-//                    latSouth = box.latLo().degrees(),
-//                    lonEast = box.lngHi().degrees()
-//                )
-
                 val polygon = cellToPolygon(cell)
                 
                 val result = S2ConversionResult(
@@ -141,32 +99,6 @@ class S2GeometryService {
         return polygon
     }
 
-    fun buildBoundingBoxFromVertices(cell: S2Cell): S2LatLngRect {
-        // Инициализируем экстремумы первыми значениями
-        val first = S2LatLng(cell.getVertex(0))
-        var minLat = first.latRadians()
-        var maxLat = first.latRadians()
-        var minLng = first.lngRadians()
-        var maxLng = first.lngRadians()
-
-        // Обрабатываем остальные вершины (1-3)
-        for (k in 1..3) {
-            val vLatLng = S2LatLng(cell.getVertex(k))
-            val lat = vLatLng.latRadians()
-            val lng = vLatLng.lngRadians()
-
-            if (lat < minLat) minLat = lat
-            if (lat > maxLat) maxLat = lat
-            if (lng < minLng) minLng = lng
-            if (lng > maxLng) maxLng = lng
-        }
-
-        // Создаём прямоугольник из двух углов (юго-запад и северо-восток)
-        val sw = S2LatLng.fromRadians(minLat, minLng)
-        val ne = S2LatLng.fromRadians(maxLat, maxLng)
-        return S2LatLngRect(sw, ne)
-    }
-    
     /**
      * Создать S2Polygon из списка точек S2LatLng
      */

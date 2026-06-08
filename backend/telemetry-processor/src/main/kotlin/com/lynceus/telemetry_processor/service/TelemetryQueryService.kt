@@ -24,7 +24,13 @@ class TelemetryQueryService(
             it.latitude,
             it.longitude).toPoint() }
 
-        val s2Polygon = S2Polygon(S2Loop(points))
+        val s2Loop = S2Loop(points)
+        s2Loop.normalize()
+        val s2Polygon = S2Polygon(s2Loop)
+
+        if (!s2Polygon.isValid) {
+            return emptyList()
+        }
 
         val coverer = S2RegionCoverer.builder()
             .setMaxLevel(NavigationProcessor.S2_ZONE_LEVEL) // Максимальный уровень

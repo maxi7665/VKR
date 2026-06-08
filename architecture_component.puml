@@ -12,8 +12,8 @@ skinparam Ranksep 5
 
 ' Внешние сущности
 Person(user, "Диспетчер", "Пользователь системы")
-System_Ext(devices, "Бортовые устройства", "Трекеры с поддержкой EGTS")
-System_Ext(gov_systems, "Внешние системы")
+System_Ext(devices, "Бортовые устройства")
+'System_Ext(gov_systems, "Внешние системы")
 
 ' Граница разрабатываемой системы
 'System_Boundary(tracking_system, "Система позиционного отслеживания") {
@@ -26,7 +26,7 @@ System_Ext(gov_systems, "Внешние системы")
     Container(processor, "Telemetry Processor", "Kotlin + Spring", "Сохранение в БД, формирование событий")
     Container(zone_tracker, "Zone Tracker", "Kotlin + Spring", "Зональное отслеживание")
     Container(search, "Spatio-Temporal Search", "Kotlin + Spring", "Выполнение пространственно-временных запросов")
-    Container(retrans, "Retransmission Service", "Kotlin + Spring", "Ретрансляция данных во внешние системы")
+    'Container(retrans, "Retransmission Service", "Kotlin + Spring", "Ретрансляция данных во внешние системы")
     
     ' API и интерфейс пользователя
     Container(api, "API Gateway", "Kotlin + Spring")
@@ -38,17 +38,17 @@ System_Ext(gov_systems, "Внешние системы")
 '}
 
 ' Связи
-Rel(devices, ingress, "Отправка телеметрии", "EGTS")
+Rel(devices, ingress, "Отправка телеметрии")
 Rel(ingress, kafka, "Публикация в топик", "Kafka protocol")
 Rel(kafka, processor, "Данные телеметрии", "Kafka")
 Rel(kafka, zone_tracker, "Получение координат для контроля", "Kafka")
-Rel(kafka, retrans, "Получение пакетов для отправки", "Kafka")
+'Rel(kafka, retrans, "Получение пакетов для отправки", "Kafka")
 
 Rel(processor, postgres, "Сохранение обработанных записей", "JDBC")
 Rel(zone_tracker, postgres, "Загрузка конфигураций зон", "JDBC")
 Rel(search, postgres, "Выполнение аналитических запросов", "JDBC")
 
-Rel(retrans, gov_systems, "Ретрансляция", "EGTS,HTTP,etc.")
+'Rel(retrans, gov_systems, "Ретрансляция", "EGTS,HTTP,etc.")
 
 Rel(user, web, "Взаимодействие с интерфейсом", "HTTPS")
 Rel(web, api, "Запросы к серверу", "REST / WebSocket")

@@ -147,7 +147,7 @@ class NavigationProcessor(
             
         } catch (e: Exception) {
             logger.error("Failed to process navigation message: ${e.message}", e)
-            e.printStackTrace() // temporary for debugging
+            e.printStackTrace()
         }
     }
     
@@ -170,13 +170,6 @@ class NavigationProcessor(
             
             try {
                 telemetryPacketRepository.saveAll(buffer)
-                //logger.info("Saved ${buffer.size} telemetry packets to database")
-
-//                for (packet in buffer) {
-//                    // Сохраняем те же пакеты в Redis
-//                    redisTelemetryStorage.processPacket(packet)
-//                }
-                //logger.info("Saved ${buffer.size} telemetry packets to Redis")
                 
                 buffer.clear()
             } catch (e: Exception) {

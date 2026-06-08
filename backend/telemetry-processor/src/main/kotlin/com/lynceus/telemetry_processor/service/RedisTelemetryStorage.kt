@@ -43,9 +43,8 @@ class RedisTelemetryStorage(
 
         try {
             val operations = redisTemplate.opsForValue()
-            val pipeline = redisTemplate.executePipelined { connection ->
+            redisTemplate.executePipelined { connection ->
                 packets.forEach { packet ->
-                    redisTemplate.delete("")
                     val key = buildKey(packet)
                     operations.set(key, packet, expires)
                 }

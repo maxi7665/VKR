@@ -1,0 +1,10 @@
+@startuml
+salt
+{#
+    **Массив интервалов**
+    [[ S1 - E1 ] <&arrow-right> [zone1,..,zoneX]]
+    [[ S2 - E2 ] <&arrow-right> [zone1,..,zoneY]]
+    [   ...   ]
+    [[ SN - EN ] <&arrow-right> [zone1,..,zoney]]
+}
+@enduml
